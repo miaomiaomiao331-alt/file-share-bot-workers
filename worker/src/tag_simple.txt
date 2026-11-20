@@ -1,0 +1,12 @@
+# ⚠️ 占位文件：部署前请把服务器上现用的 tag_simple.txt 内容整份替换进来，
+# 然后重新部署。格式： [分类] 段头 + 每行「Tag = 中文描述」。
+
+[Novel]
+Novel = 小说类素材
+
+[CharCard]
+CharCard = 角色卡类素材
+
+[General]
+BL = BL
+Completed = 已完结

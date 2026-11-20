@@ -1,0 +1,19 @@
+{
+  "name": "file-share-bot-workers",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SillyTavern 素材归档 Bot（Cloudflare Workers 版）：命令导入 + 图床频道轮询 + Supabase 单账本",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "register": "node scripts/register_commands.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.2",
+    "discord-interactions": "^4.1.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
