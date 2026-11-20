@@ -1,75 +1,193 @@
-# file-share-bot（Workers 版）
+# 🎈 存卡机 Bot（Cloudflare Workers 版）
 
-SillyTavern 素材归档 Bot 的 Cloudflare Workers 重构版。原仓库：sahjdl233/file_share_bot_tag（网关版）。
+一个帮你**自动收纳 SillyTavern 角色卡**的 Discord 机器人。
 
-## 目录
+你把角色卡文件丢给它，它自己会看懂这是什么卡、存进数据库、发到对应的论坛帖子里，
+还会顺手贴好标签。以后想找卡，搜名字或者搜标签就能找回来。
 
-- `worker/` —— 主线：Cloudflare Workers 版（Interactions + Cron 轮询，无服务器）
-- `gateway/` —— 网关监听版存档：从原仓库裁剪（已移除文件分享系统与 D1 备份），
-  将来想把服务放回服务器自动监听时可直接启用，与 Workers 版共用同一套数据（Supabase）
+**这个版本不需要服务器。**它住在 Cloudflare 的免费服务里，不用买机器、不用管它开没开机，
+装好之后它就自己在那儿干活了。
 
-## 功能（与规划定稿一致）
+> 仓库里还有一个 `gateway/` 文件夹，里面是老版本（要自己备一台服务器一直开着的那种）。
+> 第一次装的话，直接看下面的 Workers 版教程就行，老版本可以当作没看见。
 
-| 功能 | Workers 版形态 |
+---
+
+## 它能干什么
+
+- **收卡**：把角色卡、世界书、预设、TXT 文件给它，它能认出是哪一种。
+- **分家**：角色卡去角色卡论坛，世界书去世界书论坛，预设去预设论坛，各回各家。
+- **查重**：一模一样的文件不会存两份；同一张卡发新版过来，它会把新文件补进原来的帖子里，不会开新帖。
+- **贴标签**：发完帖它会自己给帖子打上论坛标签（用 AI 打，打标签用的接口可以在面板里换）。
+- **找卡**：按角色名找、按标签找，都行。
+- **图床频道自动入库**：如果你有一个专门放文件的频道，把频道告诉它，它每 5 分钟去看一眼，有新文件就自己收好。
+- **记账**：它干了什么、哪一步失败了，都会写到一个日志频道里，出问题去那儿看。
+
+支持的文件：角色卡（`.png` / `.json`）、世界书（`.json`）、预设（`.json`）、文本文档（`.txt`）。
+
+---
+
+## 开始之前，先准备好这几样
+
+全部免费，注册账号就行：
+
+1. 一个 **Discord 账号**，和一个你说了算的 Discord 服务器。
+2. 一个 **Cloudflare 账号**（跑 bot 本体用的，免费档够用）。
+3. 一个 **Supabase 账号**（存数据用的，免费档够用）。
+
+然后你要抄下来几串数字和钥匙，后面会用到。先说清楚它们都在哪儿找：
+
+| 要抄的东西 | 在哪儿找 |
 | --- | --- |
-| 自动导入（角色卡/世界书/预设/TXT 识别、hash 查重、分论坛发帖、自动打标签） | `/aaa导入` 命令附带文件；或图床频道轮询自动处理 |
-| 图床频道入库 | Cron 每 5 分钟轮询图床的 Discord 存储频道，新文件照单全收、按类型分发 |
-| 素材上传 / 素材搜索 / 角色搜索 | `/aaa素材上传` `/aaa素材搜索` `/aaa角色搜索`，数据统一存 Supabase |
-| 换 API 面板 | `/aaa更换api`，样式与原版一致，配置存 Supabase |
-| 图床异地备份 | 导入成功后备份一份到 CloudFlare-ImgBed（配置 IMGBED_URL 后启用） |
-| 日志频道 | 与原版相同的极简 embed 日志 |
+| Bot 的 Token（钥匙） | Discord 开发者后台 → 你的应用 → Bot 页 → Reset Token |
+| Public Key | Discord 开发者后台 → 你的应用 → General Information 页 |
+| Application ID（应用编号） | 同上，General Information 页 |
+| Supabase 的网址和钥匙 | Supabase 后台 → 你的项目 → Settings → API。**钥匙要用 `service_role` 那一把**，不要用 `anon` 的（文末「容易摔跤的地方」会再提醒一次） |
+| 各种频道 ID（一串数字） | 在 Discord 里打开「设置 → 高级 → 开发者模式」，然后右键点频道或者服务器，就有「复制 ID」 |
 
-已移除（原网关版的）：文件分享系统整套（发布/获取/查询/移除作品、点赞解锁、提取码、
-下载统计、发帖自动面板）、D1 备份/恢复、本地 SQLite 与本地 JSON 缓存。
+> Token 和钥匙是密码，**不要发给任何人，也不要写进任何会公开的文件里**。
 
-## 数据层
+---
 
-只剩 Supabase 一本账：
+## 动手装，一共七步
 
-- `assets` / `attachments`：自动导入（沿用现有表）
-- `archive_files` / `character_cards`：归档素材（原本地 SQLite 迁入，建表见 `worker/sql/schema.sql`）
-- `api_config`：LLM 配置单行表（同上）
-- `poll_state`：轮询书签（同上）
+### 第 1 步：在 Supabase 里建好存数据的表
 
-> 原版的素材搜索查的是本地 SQLite、自动导入写的是 Supabase，两本账不互通，
-> 这就是「搜卡搜不到导入的卡」的原因；本版合并后消失。
-> 合并口径（数据迁移时执行）：以 Supabase 为准，SQLite 独有的按 hash 去重后并入。
+打开 Supabase 后台，进你的项目，找到 **SQL Editor**，
+把本仓库 `worker/sql/schema.sql` 这个文件里的内容整段粘进去，点运行。
+这一步是给 bot 准备好放数据的柜子。
 
-## 部署（Workers 版）
+（这个项目原本就在用的三张老表 `assets` / `attachments` / `tags` 不用动，
+脚本只会新建它缺的那几张。）
 
-1. **建表**：在 Supabase 后台 SQL Editor 执行 `worker/sql/schema.sql`。
-2. **填配置**：编辑 `worker/wrangler.toml` 的 `[vars]`——
-   论坛频道 ID（CHARACTER_FORUM_ID 等）、轮询频道 POLL_CHANNEL_ID、SUPABASE_URL 必填；
-   其余已按现行 bot_config.json 预填。
-3. **素材标签**：自由填写，无词表文件（原网关版的 tag_simple.txt 标签池校验已按需求移除；论坛自动打标签读的是 Discord 论坛自带标签，不受影响）。
-4. **密钥**（不要写进任何文件）：
-   ```
-   cd worker
-   npx wrangler secret put DISCORD_TOKEN
-   npx wrangler secret put DISCORD_PUBLIC_KEY
-   npx wrangler secret put SUPABASE_KEY
-   ```
-   DISCORD_PUBLIC_KEY 在开发者后台 General Information 页。
-5. **部署**：`npm install && npx wrangler deploy`，记下分配的 workers.dev 地址。
-6. **注册命令**：`DISCORD_TOKEN=… DISCORD_APPLICATION_ID=… GUILD_ID=… npm run register`
-7. **接上 Discord**：开发者后台把 Interactions Endpoint URL 填为第 5 步的地址
-   （保存时 Discord 会来验活，能存上即通）。
-8. **邀请 bot**：OAuth2 链接模板（权限已按功能算好）：
-   `https://discord.com/oauth2/authorize?client_id=<应用ID>&scope=bot%20applications.commands&permissions=326417632320`
+### 第 2 步：把频道编号填进配置文件
 
-### Bot 权限说明
+打开 `worker/wrangler.toml`，找到 `[vars]` 那一段，把里面的空值换成你自己的编号：
 
-- 开发者后台的三个特权意图（消息内容/成员/在线状态）**全部不用开**——Workers 版不连网关。
-  （gateway/ 监听版启用时才需要开「消息内容意图」。）
-- 邀请权限整数 326417632320 包含：查看频道、发送消息、在帖子中发送消息、创建公开帖子、
-  管理帖子（打标签）、附加文件、嵌入链接、读取消息历史（轮询）、添加反应（导入反馈表情）。
+- `CHARACTER_FORUM_ID`：角色卡论坛的编号（**必填**，其他论坛不填时文件都发到这里）
+- `WORLDBOOK_FORUM_ID` / `PRESET_FORUM_ID` / `TXT_FORUM_ID`：世界书 / 预设 / 文本论坛的编号（可以不填）
+- `LOG_CHANNEL_ID`：日志频道的编号
+- `STORAGE_CHANNEL_ID`：素材文件存放频道的编号
+- `POLL_CHANNEL_ID`：想让 bot 自动去收文件的频道编号（不用这个功能就不填）
+- `GUILD_ID`：你的服务器编号
+- `DEVELOPER_IDS`：你自己的用户编号（换 API 的面板只有名单里的人能开）
+- `SUPABASE_URL`：第 1 步那个项目的网址
 
-## 与网关版的行为差异（已知）
+### 第 3 步：把三把钥匙交给 Cloudflare 保管
 
-1. **没有零点击监听**：Discord 不给 Workers 消息事件。替代是命令附带文件 + 频道轮询（延迟 ≤5 分钟）。
-2. **自动打标签只覆盖 bot 自己发的帖**：原版靠 threadCreate 事件能给任何人新发的帖打标签；
-   Workers 版没有该事件，只在导入流水线内给自己发的帖打。手动发帖的自动标签不再有。
-3. **素材上传的分片**：原版入口检查使分片逻辑实际走不到；本版按 README 口径放行分片，
-   另设 200MB 防滥用硬上限。
-4. **同名素材补发帖时**：原版因数据缺 type 字段只能回退到角色卡论坛；本版用本次解析的类型选论坛。
-5. 本地 JSON 缓存取消：Supabase 为唯一账本，单次操作延迟略增，量级可忽略。
+在 `worker` 文件夹里依次运行（运行后它会让你把钥匙粘进去，粘的时候屏幕上看不见，是正常的）：
+
+```
+npx wrangler secret put DISCORD_TOKEN
+npx wrangler secret put DISCORD_PUBLIC_KEY
+npx wrangler secret put SUPABASE_KEY
+```
+
+钥匙这样存最安全，不要把它们写进 `wrangler.toml` 或者任何代码文件里。
+
+### 第 4 步：把 bot 发上线
+
+```
+cd worker
+npm install
+npx wrangler deploy
+```
+
+跑完之后它会给你一个网址（长得像 `https://file-share-bot.xxx.workers.dev`），
+**把这个网址记下来**，下一步要用。
+
+### 第 5 步：给 Discord 注册命令
+
+```
+DISCORD_TOKEN=你的Token DISCORD_APPLICATION_ID=你的应用编号 GUILD_ID=你的服务器编号 npm run register
+```
+
+这一步是告诉 Discord：「这个服务器里有这么几个命令」，注册完命令才会出现在输入框里。
+
+### 第 6 步：把第 4 步的网址填回 Discord
+
+回到 Discord 开发者后台 → 你的应用 → General Information 页，
+把 **Interactions Endpoint URL** 填成第 4 步的那个网址，保存。
+
+保存的时候 Discord 会自己去敲一下 bot 的门，能保存成功，就说明两边通上了。
+
+### 第 7 步：请 bot 进你的服务器（⚠️ 这一步最容易摔）
+
+打开这个链接（把里面的 `<应用ID>` 换成你的 Application ID）：
+
+```
+https://discord.com/oauth2/authorize?client_id=<应用ID>&scope=bot%20applications.commands&permissions=326417632320&integration_type=0
+```
+
+授权的时候，**一定要选「添加至服务器」**，选你自己的服务器。
+
+装完之后去服务器的成员列表里看一眼：**成员列表里能看到这个 bot，才算它真的进来了。**
+
+> 只把命令装上、bot 本体没进服务器的话，会出现一种很迷惑的现象：
+> 命令能弹出来、能填，但一执行就失败。九成是这一步没做对，回来重做这一遍就好。
+
+---
+
+## 装好了怎么用
+
+| 命令 | 干什么 |
+| --- | --- |
+| `/aaa导入` | 把文件附在这条命令里发出去，bot 自动收卡、发帖、打标签（一次最多附 5 个文件） |
+| `/aaa素材上传` | 手动存一个文件，要自己写标签（至少写一个，空格隔开） |
+| `/aaa素材搜索` | 按标签找素材 |
+| `/aaa角色搜索` | 按角色名找角色卡 |
+| `/aaa更换api` | 打开面板，换打标签用的 AI 接口和模型（只有 `DEVELOPER_IDS` 里的人能开） |
+
+图床频道自动入库那边，bot 处理完文件会在那条消息上贴表情，意思是：
+
+| 表情 | 意思 |
+| --- | --- |
+| ✅ | 收好了（或者补进老帖子了） |
+| 🔁 | 这个文件已经有了，没重复存 |
+| ❌ | 有文件没存成功，去日志频道看原因 |
+| ❓ | 这个文件它认不出来是什么 |
+
+还有两件它自己会做的事：
+
+- 同一张卡再发一次新版，它会认出来是同一张卡（看卡里面的角色名），把新文件补进老帖子、刷新帖子内容，不会开新帖。
+- 导入失败的文件不会留下半截记录，修好之后重新发一次就行，不会被误判成「已经有了」。
+
+---
+
+## 容易摔跤的地方（先看这里，再提问）
+
+**Q：命令能弹出来，但一导入就失败 / 发不了帖。**
+A：多半是 bot 本体没进服务器（只装了命令）。回第 7 步，用带 `integration_type=0` 的链接重新请它进来，然后去成员列表里确认能看到它。另外检查一下：目标论坛频道有没有给 bot「查看频道、发帖、附加文件」的权限。
+
+**Q：图床频道里的新文件，它一直不来收。**
+A：那个频道如果在私密分类里，要单独给 bot 开权限：在那个频道的权限设置里，把 bot 加上，勾上「查看频道」和「读取消息历史」。还有一个正常现象：它第一次去看的时候只会记住最新的一条在哪儿，**不会回头收老文件**，只有之后的新文件才会被收。
+
+**Q：导入的卡，用搜索搜不到。**
+A：检查第 3 步的 `SUPABASE_KEY` 是不是填成了 `anon` 的钥匙。要用 `service_role` 那一把，位置在 Supabase 后台 Settings → API。
+
+**Q：`/aaa更换api` 打不开 / 说我没权限。**
+A：这个面板只有 `DEVELOPER_IDS` 里的人能开，去 `wrangler.toml` 里把你自己的用户编号加进去，重新部署一次。
+
+**Q：改完配置好像没生效。**
+A：改 `wrangler.toml` 之后要重新跑一次 `npx wrangler deploy`；改钥匙之后不用，它是立刻生效的。
+
+**Q：老版本（gateway 文件夹那个）还能用吗？**
+A：能，它是完整存档，要自己有一台一直开着的服务器。和这个版本的区别主要是：老版本能「零点击」——文件往频道里一扔它就自己收了；Workers 版做不到盯着频道看，所以用了「命令附带文件」和「每 5 分钟去频道看一眼」两个办法代替。另外老版本能给任何人发的帖子打标签，Workers 版只能给自己发的帖子打。
+
+---
+
+## 开源协议
+
+MIT License。随便用、随便改、随便分发，保留原作者的版权声明就行。
+协议全文见仓库里的 [LICENSE](LICENSE) 文件。
+
+---
+
+## 致谢
+
+这个 bot 不是从零开始写的，它站在前人的肩膀上：
+
+- [tomoakiLupin/file_share_bot](https://github.com/tomoakiLupin/file_share_bot) —— 最初的原版 bot，本项目一切的源头。
+- [sahjdl233/file_share_bot_tag](https://github.com/sahjdl233/file_share_bot_tag) —— 在原版基础上加了「用 LLM 自动打标签」和「面板自由切换 API」的版本，本仓库正是从它继续改出来的。
+
+谢谢两位作者把代码公开出来。
