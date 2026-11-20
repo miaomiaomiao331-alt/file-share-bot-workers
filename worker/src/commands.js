@@ -21,14 +21,14 @@ export const COMMANDS = [
         description: '上传素材文件到归档系统，支持自动识别 SillyTavern 角色卡',
         options: [
             { type: 11, name: 'file', description: '要上传的素材文件', required: true },
-            { type: 3, name: 'tags', description: '标签（用空格分隔，例如: Novel BL Completed）', required: true, autocomplete: true },
+            { type: 3, name: 'tags', description: '标签（用空格分隔，例如: Novel BL Completed）', required: true },
         ],
     },
     {
         name: 'aaa素材搜索',
         description: '按标签组合搜索已归档的素材',
         options: [
-            { type: 3, name: 'tags', description: '搜索标签（用空格分隔，例如: Novel BL）', required: true, autocomplete: true },
+            { type: 3, name: 'tags', description: '搜索标签（用空格分隔，例如: Novel BL）', required: true },
             { type: 4, name: 'page', description: '页码', required: false, min_value: 1 },
         ],
     },

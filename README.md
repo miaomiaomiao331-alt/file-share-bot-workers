@@ -41,7 +41,7 @@ SillyTavern 素材归档 Bot 的 Cloudflare Workers 重构版。原仓库：sahj
 2. **填配置**：编辑 `worker/wrangler.toml` 的 `[vars]`——
    论坛频道 ID（CHARACTER_FORUM_ID 等）、轮询频道 POLL_CHANNEL_ID、SUPABASE_URL 必填；
    其余已按现行 bot_config.json 预填。
-3. **标签池**：把服务器上现用的 `tag_simple.txt` 内容整份替换 `worker/src/tag_simple.txt`。
+3. **素材标签**：自由填写，无词表文件（原网关版的 tag_simple.txt 标签池校验已按需求移除；论坛自动打标签读的是 Discord 论坛自带标签，不受影响）。
 4. **密钥**（不要写进任何文件）：
    ```
    cd worker

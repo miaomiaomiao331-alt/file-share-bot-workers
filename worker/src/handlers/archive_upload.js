@@ -1,7 +1,7 @@
 /**
  * /aaa素材上传（Workers 版）
  *
- * 与网关版 handler/archive/upload_handler.js 流程一致：标签校验 →
+ * 与网关版 handler/archive/upload_handler.js 流程一致：标签自由填写 →
  * 下载附件 → 识别角色卡 → 上传到存储频道（超限自动分片）→ 入库 → 回执。
  * 差别：存储改走 Supabase 版 archive_store；交互改走 REST。
  *
@@ -10,7 +10,6 @@
  * Workers 版按 README 的口径放行分片，仅保留 200MB 的防滥用硬上限。
  */
 import { extractCharacterData } from '../core/char_card_parser.js';
-import { validateTags } from '../core/tag_pool.js';
 import { sendLog } from '../core/logger.js';
 import * as api from '../discord_api.js';
 
@@ -89,27 +88,13 @@ export async function executeArchiveUpload(ctx, interaction) {
                 }
                 const rawTags = tagsStr.split(/\s+/).filter(t => t.trim().length > 0);
 
-                // === 1. 标签校验 ===
-                const { valid: validTags, invalid, suggestions } = validateTags(rawTags);
+                // === 1. 标签（自由填写，不做词表校验） ===
+                const validTags = rawTags;
                 if (validTags.length === 0) {
-                    await api.editOriginal(env, interaction, {
-                        content: `❌ 没有有效的标签。请使用 \`/aaa素材搜索\` 查看支持的标签列表。\n`
-                            + (invalid.length > 0 ? `无效标签: \`${invalid.join('`, `')}\`` : ''),
-                    });
+                    await api.editOriginal(env, interaction, { content: '❌ 请至少填写一个标签（空格分隔）。' });
                     return;
                 }
-
-                let warned = false;
-                if (invalid.length > 0) {
-                    let warnMsg = `⚠️ 以下标签不在标签池中，已忽略: \`${invalid.join('`, `')}\``;
-                    for (const tag of invalid) {
-                        if (suggestions[tag] && suggestions[tag].length > 0) {
-                            warnMsg += `\n  「${tag}」是否想用: \`${suggestions[tag].join('`, `')}\`？`;
-                        }
-                    }
-                    await api.editOriginal(env, interaction, { content: warnMsg });
-                    warned = true;
-                }
+                const warned = false;
 
                 // === 2. 文件大小硬上限（分片逻辑处理单文件上限以上的部分） ===
                 if (attachment.size > HARD_LIMIT_BYTES) {

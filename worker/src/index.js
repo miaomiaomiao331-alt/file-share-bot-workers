@@ -14,7 +14,6 @@ import { verifyKey } from 'discord-interactions';
 import { createSupabase } from './core/supabase.js';
 import { createArchiveStore } from './core/archive_store.js';
 import { createApiConfigStore } from './core/api_config_store.js';
-import { getAutocomplete } from './core/tag_pool.js';
 import { executeImportCommand } from './handlers/import_command.js';
 import { executeArchiveUpload } from './handlers/archive_upload.js';
 import { executeTagSearch, executeCharSearch, handleSearchPageButton } from './handlers/archive_search.js';
@@ -87,14 +86,8 @@ async function routeModal(ctx, interaction) {
 }
 
 function routeAutocomplete(interaction) {
-    const focused = (interaction.data.options || []).find(o => o.focused);
-    let choices = [];
-    if (focused && focused.name === 'tags') {
-        const parts = String(focused.value || '').split(/\s+/);
-        const currentInput = parts[parts.length - 1] || '';
-        choices = getAutocomplete(currentInput).map(name => ({ name, value: name }));
-    }
-    return { type: 8, data: { choices } };
+    // 素材标签已改为自由填写，不再提供词表补全
+    return { type: 8, data: { choices: [] } };
 }
 
 export default {
