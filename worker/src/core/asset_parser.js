@@ -12,6 +12,7 @@
  */
 
 import { parseCharacter } from './character_parser.js';
+import { listTextChunks } from './char_card_parser.js';
 import { isWorldbook, parseWorldbook } from './worldbook_parser.js';
 import { isPreset, parsePreset } from './preset_parser.js';
 import { parseText } from './text_parser.js';
@@ -55,7 +56,8 @@ async function parseAsset(file) {
         const hasCardData = !!(asset.metadata
             && asset.metadata.characterData
             && Object.keys(asset.metadata.characterData).length > 0);
-        return { asset, type: hasCardData ? 'character' : 'unknown' };
+        if (hasCardData) return { asset, type: 'character' };
+        return { asset, type: 'unknown', debug: { chunks: listTextChunks(buffer) } };
     }
 
     // ---- JSON：按结构分流 ----

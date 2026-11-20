@@ -27,6 +27,14 @@ export async function saveAsset(supabase, asset) {
     await saveToSupabase(supabase, asset);
 }
 
+/** 删除一个素材及其附件/标签记录（导入失败回滚用，避免失败留痕把重试误判为重复） */
+export async function deleteAsset(supabase, assetId) {
+    if (!assetId) return;
+    await supabase.from('attachments').delete().eq('asset_id', assetId);
+    await supabase.from('tags').delete().eq('asset_id', assetId);
+    await supabase.from('assets').delete().eq('id', assetId);
+}
+
 export async function getAsset(supabase, id) {
     const { data, error } = await supabase
         .from('assets')

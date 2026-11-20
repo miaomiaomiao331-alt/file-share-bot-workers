@@ -23,14 +23,24 @@ function extractCharacterData(buffer, fileName) {
 
     const lowerName = (fileName || '').toLowerCase();
 
-    // JSON 格式 (.json 文件)
-    if (lowerName.endsWith('.json')) {
+    // 内容优先（Workers 版修正，老网关版同处为文件名优先）：
+    // 先嗅文件头——PNG 本体无论被命名成什么（例如误命名为 .json）都按 PNG 读；
+    // 内容以 { 开头的一律按 JSON 读。文件名只作最后兜底。
+    if (buffer.slice(0, 8).equals(PNG_SIGNATURE) && buffer.length >= 24) {
+        return extractFromPngBuffer(buffer);
+    }
+
+    let firstByte = 0;
+    for (let i = 0; i < Math.min(buffer.length, 4); i++) {
+        if (![0x20, 0x09, 0x0a, 0x0d].includes(buffer[i])) { firstByte = buffer[i]; break; }
+    }
+    if (firstByte === 0x7b) { // '{'
         return extractFromJsonBuffer(buffer);
     }
 
-    // PNG 格式
-    if (buffer.slice(0, 8).equals(PNG_SIGNATURE) && buffer.length >= 24) {
-        return extractFromPngBuffer(buffer);
+    // JSON 格式 (.json 文件)
+    if (lowerName.endsWith('.json')) {
+        return extractFromJsonBuffer(buffer);
     }
 
     return { name: null, data: null };
@@ -133,4 +143,28 @@ function extractName(obj) {
     return null;
 }
 
-export { extractCharacterData };
+export { extractCharacterData, listTextChunks };
+
+/** 诊断用：列出 PNG 全部文本块（类型/关键字/值长度），不解析内容 */
+function listTextChunks(buffer) {
+    const out = [];
+    if (!buffer || buffer.length < 8 || !buffer.slice(0, 8).equals(PNG_SIGNATURE)) return out;
+    let offset = 8;
+    while (offset + 8 <= buffer.length) {
+        const length = buffer.readUInt32BE(offset);
+        const type = buffer.toString('ascii', offset + 4, offset + 8);
+        if (offset + 12 + length > buffer.length) break;
+        if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
+            const data = buffer.slice(offset + 8, offset + 8 + length);
+            const nullIndex = data.indexOf(0);
+            out.push({
+                type,
+                keyword: nullIndex > 0 ? data.toString('ascii', 0, nullIndex) : '(none)',
+                valueLen: nullIndex > 0 ? length - nullIndex - 1 : length,
+            });
+        }
+        offset += 12 + length;
+        if (type === 'IEND') break;
+    }
+    return out;
+}
