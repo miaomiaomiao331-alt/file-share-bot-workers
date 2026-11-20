@@ -12,7 +12,7 @@
 
 import { parseAsset, TYPE_LABELS } from './core/asset_parser.js';
 import { generateHash } from './core/hash.js';
-import { findByHash, findByIdentity, saveAsset } from './core/asset_storage.js';
+import { findByHash, findByIdentity, saveAsset, deleteAsset } from './core/asset_storage.js';
 import { formatForumMessage } from './core/forum_formatter.js';
 import { isImgBedEnabled, backupToImgBed } from './core/imgbed.js';
 import { computeAutoTags, isAutoTagEnabled } from './core/auto_tagger.js';
@@ -47,12 +47,12 @@ export async function processImportedFile(ctx, file) {
         file.hash = generateHash(file.buffer);
 
         // ---- 解析 ----
-        const { asset, type } = await parseAsset(file);
+        const { asset, type, debug } = await parseAsset(file);
         if (!asset || type === 'unknown' || type === 'unsupported') {
             await sendLog(env, 'warning', {
                 module: 'Importer',
                 operation: '跳过文件',
-                message: `文件: ${file.name}\n原因: ${type === 'unsupported' ? '不支持的格式' : '无法识别为角色卡/世界书/预设'}`,
+                message: `文件: ${file.name}\n原因: ${type === 'unsupported' ? '不支持的格式' : '无法识别为角色卡/世界书/预设'}${debug ? `\n数据块: ${JSON.stringify(debug.chunks)}` : ''}`,
             });
             return 'unsupported';
         }
@@ -131,8 +131,8 @@ export async function processImportedFile(ctx, file) {
 
             return 'success';
         } catch (error) {
-            asset.status = 'failed';
-            await saveAsset(ctx.supabase, asset).catch(() => {});
+            // 发布失败：回滚刚保存的 pending 记录（失败不留痕，重试不会被误判为「重复文件」）
+            await deleteAsset(ctx.supabase, asset.id).catch(() => {});
             throw error;
         }
 

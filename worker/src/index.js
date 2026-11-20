@@ -19,6 +19,7 @@ import { executeArchiveUpload } from './handlers/archive_upload.js';
 import { executeTagSearch, executeCharSearch, handleSearchPageButton } from './handlers/archive_search.js';
 import { executeApiPanel, handleApiComponent, handleApiModal } from './handlers/api_panel.js';
 import { pollImgbedChannel } from './poller.js';
+import { COMMANDS } from './commands.js';
 
 function makeCtx(env) {
     const supabase = createSupabase(env);
@@ -92,6 +93,30 @@ function routeAutocomplete(interaction) {
 
 export default {
     async fetch(request, env, execCtx) {
+        const url = new URL(request.url);
+        // 一次性管理路由：用 Worker 自身的 DISCORD_TOKEN 注册斜杠命令（部署后由管理员触发）
+        if (url.pathname === '/admin/register') {
+            if (!env.ADMIN_TOKEN || url.searchParams.get('token') !== env.ADMIN_TOKEN) {
+                return new Response('Forbidden', { status: 403 });
+            }
+            if (!env.DISCORD_TOKEN || !env.DISCORD_APPLICATION_ID || !env.GUILD_ID) {
+                return new Response('DISCORD_TOKEN 尚未配置', { status: 500 });
+            }
+            const res = await fetch(
+                `https://discord.com/api/v10/applications/${env.DISCORD_APPLICATION_ID}/guilds/${env.GUILD_ID}/commands`,
+                {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bot ' + env.DISCORD_TOKEN },
+                    body: JSON.stringify(COMMANDS),
+                }
+            );
+            const text = await res.text();
+            return new Response(`register → HTTP ${res.status}: ${text.slice(0, 500)}`, {
+                status: res.ok ? 200 : 502,
+                headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+            });
+        }
+
         if (request.method !== 'POST') {
             return new Response('file-share-bot (workers) is running.');
         }
