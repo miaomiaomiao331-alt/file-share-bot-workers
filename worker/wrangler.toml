@@ -39,3 +39,4 @@ SUPABASE_URL = "https://btgxexurznicswzvyunt.supabase.co"
 IMGBED_URL = ""
 IMGBED_AUTH_CODE = ""
 # Trigger Cloudflare build
+grep -Rni --exclude-dir=node_modules --exclude-dir=.git "素材上传" worker/src
