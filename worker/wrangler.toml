@@ -38,3 +38,4 @@ SUPABASE_URL = "https://btgxexurznicswzvyunt.supabase.co"
 # 图床异地备份（可选；留空关闭）
 IMGBED_URL = ""
 IMGBED_AUTH_CODE = ""
+# Trigger Cloudflare build
